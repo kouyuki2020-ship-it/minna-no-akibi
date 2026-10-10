@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>みんなの空き日</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans JP",sans-serif;background:#f5f7fb;color:#20242b}
+header{background:linear-gradient(135deg,#5b5cf0,#7b61ff);color:#fff;padding:24px 18px 28px;border-radius:0 0 24px 24px}
+h1{margin:0 0 6px;font-size:26px}header p{margin:0;opacity:.9}
+main{max-width:760px;margin:auto;padding:16px}
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 4px 18px #0000000d}
+h2{font-size:18px;margin:0 0 14px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+input,button,select{font:inherit;border-radius:11px;padding:11px;border:1px solid #d9dce5}
+button{border:0;background:#5b5cf0;color:#fff;font-weight:700;cursor:pointer}
+button.secondary{background:#eef0ff;color:#4b4dd9}.danger{background:#fff0f0!important;color:#d33!important}
+.person{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}
+.person:last-child{border-bottom:0}.person button{padding:7px 10px}
+.schedule{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:8px}
+.empty{color:#777;text-align:center;padding:12px}
+.result{display:grid;gap:8px}.date{background:#edf8ef;border:1px solid #bfe8c6;border-radius:12px;padding:12px;font-weight:700}
+.badge{display:inline-block;background:#eef0ff;color:#4b4dd9;border-radius:999px;padding:3px 8px;font-size:12px}
+.small{font-size:13px;color:#68707c}.actions{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:520px){.row{flex-direction:column}.schedule{grid-template-columns:1fr}.actions button{flex:1}}
+</style>
+</head>
+<body>
+<header><h1>📅 みんなの空き日</h1><p>みんなの予定を入れるだけで、全員が空いている日を探します。</p></header>
+<main>
+<section class="card">
+<h2>① メンバー</h2>
+<div class="row"><input id="personName" placeholder="名前（例：太郎）"><button onclick="addPerson()">メンバーを追加</button></div>
+<div id="people"></div>
+</section>
+
+<section class="card">
+<h2>② 予定を入力</h2>
+<div class="row">
+<select id="personSelect"></select>
+<input id="busyDate" type="date">
+<button onclick="addBusy()">予定を追加</button>
+</div>
+<div id="schedules"></div>
+</section>
+
+<section class="card">
+<h2>③ 探す期間</h2>
+<div class="row">
+<label class="small">開始日<br><input id="start" type="date"></label>
+<label class="small">終了日<br><input id="end" type="date"></label>
+</div>
+<div class="actions" style="margin-top:12px">
+<button onclick="findFree()">全員の空き日を検索</button>
+<button class="secondary" onclick="clearAll()">全部リセット</button>
+</div>
+</section>
+
+<section class="card">
+<h2>🔎 全員が空いている日</h2>
+<div id="result" class="result"><div class="empty">メンバーと予定を入力して検索してください。</div></div>
+</section>
+</main>
+
+<script>
+let data=JSON.parse(localStorage.getItem('freeDayApp')||'null')||{people:[],busy:{}};
+
+function save(){localStorage.setItem('freeDayApp',JSON.stringify(data));render();}
+function addPerson(){
+ const n=document.getElementById('personName').value.trim();
+ if(!n)return alert('名前を入力してください');
+ if(data.people.includes(n))return alert('同じ名前がすでにあります');
+ data.people.push(n); data.busy[n]=data.busy[n]||[];
+ document.getElementById('personName').value=''; save();
+}
+function removePerson(n){
+ if(confirm(n+'さんを削除しますか？')){data.people=data.people.filter(x=>x!==n);delete data.busy[n];save();}
+}
+function addBusy(){
+ const p=document.getElementById('personSelect').value,d=document.getElementById('busyDate').value;
+ if(!p)return alert('先にメンバーを追加してください');
+ if(!d)return alert('日付を選んでください');
+ if(!data.busy[p].includes(d))data.busy[p].push(d);
+ save();
+}
+function removeBusy(p,d){data.busy[p]=data.busy[p].filter(x=>x!==d);save();}
+function render(){
+ const ps=document.getElementById('people'), sel=document.getElementById('personSelect'), sc=document.getElementById('schedules');
+ ps.innerHTML=data.people.length?data.people.map(n=>`<div class="person"><span>👤 ${esc(n)}</span><button class="danger" onclick="removePerson('${js(n)}')">削除</button></div>`).join(''):'<div class="empty">まだメンバーがいません。</div>';
+ sel.innerHTML=data.people.map(n=>`<option>${esc(n)}</option>`).join('');
+ sc.innerHTML=data.people.length?data.people.map(p=>`<div style="margin:12px 0"><b>${esc(p)}</b> <span class="badge">${data.busy[p].length}件</span>
+ ${data.busy[p].sort().map(d=>`<div class="schedule"><span>${fmt(d)}</span><button class="danger" onclick="removeBusy('${js(p)}','${d}')">削除</button></div>`).join('')||'<div class="small">予定なし（全日空き）</div>'}</div>`).join(''):'<div class="empty">メンバーを追加してください。</div>';
+}
+function findFree(){
+ if(!data.people.length)return alert('メンバーを追加してください');
+ let s=document.getElementById('start').value,e=document.getElementById('end').value;
+ if(!s||!e)return alert('開始日と終了日を選んでください');
+ if(s>e)return alert('終了日は開始日以降にしてください');
+ const out=[], cur=new Date(s+'T00:00:00'), end=new Date(e+'T00:00:00');
+ while(cur<=end){
+  const d=localDate(cur);
+  if(data.people.every(p=>!data.busy[p].includes(d)))out.push(d);
+  cur.setDate(cur.getDate()+1);
+ }
+ document.getElementById('result').innerHTML=out.length?out.map(d=>`<div class="date">✅ ${fmt(d)}</div>`).join(''):'<div class="empty">この期間には、全員が空いている日はありません。</div>';
+}
+function localDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fmt(s){const d=new Date(s+'T00:00:00');return d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'})}
+function clearAll(){if(confirm('すべてのデータを削除しますか？')){data={people:[],busy:{}};save();document.getElementById('result').innerHTML='<div class="empty">メンバーと予定を入力して検索してください。</div>';}}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function js(s){return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+const now=new Date(), plus30=new Date(now);plus30.setDate(now.getDate()+30);
+document.getElementById('start').value=localDate(now);document.getElementById('end').value=localDate(plus30);
+render();
+</script>
+</body>
+</html>
